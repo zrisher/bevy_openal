@@ -1,2 +1,8 @@
 # bevy_openal
-Enables easy usage of OpenAL from within a Bevy app.
+
+Bevy plugin + runtime for [OpenAL Soft](https://github.com/kcat/openal-soft), with a CLI example in `crates/bevy-openal-example`.
+
+See the crate-specific docs:
+
+- [bevy-openal](crates/bevy-openal/README.md)
+- [bevy-openal-example](crates/bevy-openal-example/README.md)

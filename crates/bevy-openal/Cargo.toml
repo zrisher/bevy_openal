@@ -1,0 +1,21 @@
+[package]
+name = "bevy-openal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+bevy_math.workspace = true
+bevy_transform.workspace = true
+glam.workspace = true
+libloading = "0.8.9"
+rodio = "0.20.1"
+thiserror.workspace = true
+tracing.workspace = true
+anyhow = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+zip = { workspace = true, optional = true }
+
+[features]
+build-support = ["dep:anyhow", "dep:reqwest", "dep:zip"]

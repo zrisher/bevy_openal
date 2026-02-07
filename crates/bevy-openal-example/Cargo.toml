@@ -1,0 +1,23 @@
+[package]
+name = "bevy-openal-example"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+bevy_math.workspace = true
+bevy_time.workspace = true
+bevy_transform.workspace = true
+bevy-openal = { path = "../bevy-openal" }
+shell-words = "1.1.0"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59.0", features = ["Win32_System_Console", "Win32_Foundation"] }
+
+[target.'cfg(not(windows))'.dependencies]
+libc = "0.2.153"
+
+[build-dependencies]
+bevy-openal = { path = "../bevy-openal", features = ["build-support"] }

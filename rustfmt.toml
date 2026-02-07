@@ -1,0 +1,12 @@
+# Basic settings
+edition = "2021"
+max_width = 100
+hard_tabs = false
+tab_spaces = 4
+
+# Function and method settings
+fn_params_layout = "Tall"
+
+# Misc settings
+use_small_heuristics = "Default"
+newline_style = "Auto"
