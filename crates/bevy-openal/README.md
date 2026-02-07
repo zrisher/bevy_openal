@@ -106,13 +106,30 @@ The loader searches the executable directory first, then falls back to the platf
 - macOS: `libopenal.dylib` next to the binary inside the `.app` (typically `Contents/MacOS/`)
 
 The client build script can build [OpenAL Soft](https://github.com/kcat/openal-soft) from source and copy the library into the target
-directory. This requires CMake and a C/C++ toolchain for the current platform. Environment
-variables for the build step:
+directory. This requires CMake and a C/C++ toolchain for the current platform.
+Use the `openal-soft-build` crate from `build.rs` to do this. Environment variables for the build
+step:
 
 - `OPENAL_SOFT_SOURCE_DIR` to use an existing source checkout
 - `OPENAL_SOFT_REF` to choose a tag (default: `1.23.1`)
 - `OPENAL_SOFT_URL` to override the download URL
 - `OPENAL_SOFT_FORCE_REBUILD=1` to force a rebuild
+
+Example:
+
+```toml
+# Cargo.toml
+[build-dependencies]
+openal-soft-build = "0.0.1"
+```
+
+```rust
+// build.rs
+fn main() {
+    openal_soft_build::ensure_openal_soft_binary()
+        .expect("Failed to build OpenAL Soft binary for this target");
+}
+```
 
 ## Render Modes Summary
 

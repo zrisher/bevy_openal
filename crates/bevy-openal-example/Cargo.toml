@@ -20,4 +20,4 @@ windows-sys = { version = "0.59.0", features = ["Win32_System_Console", "Win32_F
 libc = "0.2.153"
 
 [build-dependencies]
-bevy-openal = { path = "../bevy-openal", features = ["build-support"] }
+openal-soft-build = { path = "../openal-soft-build" }

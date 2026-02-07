@@ -234,7 +234,6 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 name = "bevy-openal"
 version = "0.0.1"
 dependencies = [
- "anyhow",
  "bevy_app",
  "bevy_asset",
  "bevy_ecs",
@@ -243,11 +242,9 @@ dependencies = [
  "bevy_transform",
  "glam",
  "libloading",
- "reqwest",
  "rodio",
  "thiserror 1.0.69",
  "tracing",
- "zip",
 ]
 
 [[package]]
@@ -261,6 +258,7 @@ dependencies = [
  "bevy_time",
  "bevy_transform",
  "libc",
+ "openal-soft-build",
  "shell-words",
  "tracing-subscriber",
  "windows-sys 0.59.0",
@@ -1990,6 +1988,15 @@ name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
+
+[[package]]
+name = "openal-soft-build"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "reqwest",
+ "zip",
+]
 
 [[package]]
 name = "parking"

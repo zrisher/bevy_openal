@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/bevy-openal", "crates/bevy-openal-example"]
+members = ["crates/bevy-openal", "crates/bevy-openal-example", "crates/openal-soft-build"]
 
 [workspace.package]
 version = "0.0.1"

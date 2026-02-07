@@ -15,10 +15,6 @@ libloading = "0.8.9"
 rodio = "0.20.1"
 thiserror.workspace = true
 tracing.workspace = true
-anyhow = { workspace = true, optional = true }
-reqwest = { workspace = true, optional = true }
-zip = { workspace = true, optional = true }
 
 [features]
-build-support = ["dep:anyhow", "dep:reqwest", "dep:zip"]
 bevy-assets = ["dep:bevy_asset", "dep:bevy_reflect"]

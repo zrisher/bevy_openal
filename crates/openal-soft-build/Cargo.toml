@@ -1,0 +1,13 @@
+[package]
+name = "openal-soft-build"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+reqwest = { workspace = true, optional = true }
+zip = { workspace = true, optional = true }
+
+[features]
+default = ["download"]
+download = ["dep:reqwest", "dep:zip"]

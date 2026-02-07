@@ -5,7 +5,20 @@ use std::process::Command;
 
 const DEFAULT_OPENAL_REF: &str = "1.23.1";
 
-pub fn ensure_openal_soft_binary() -> Result<()> {
+/// Ensures the OpenAL Soft shared library is present in the current target directory.
+///
+/// This is designed to be called from a consumer `build.rs`. It will compile OpenAL Soft via
+/// CMake (downloading sources by default) and copy the resulting shared library next to the
+/// final build artifacts (`target/{profile}/`).
+///
+/// Environment variables:
+/// - `OPENAL_SOFT_SOURCE_DIR`: use an existing source checkout instead of downloading
+/// - `OPENAL_SOFT_REF`: tag to download (default: `1.23.1`)
+/// - `OPENAL_SOFT_URL`: override download URL (default points at the GitHub tag zip)
+/// - `OPENAL_SOFT_FORCE_REBUILD=1`: force rebuild even if the output already exists
+///
+/// Returns the output path of the copied shared library.
+pub fn ensure_openal_soft_binary() -> Result<PathBuf> {
     println!("cargo:rerun-if-env-changed=OPENAL_SOFT_FORCE_REBUILD");
     println!("cargo:rerun-if-env-changed=OPENAL_SOFT_SOURCE_DIR");
     println!("cargo:rerun-if-env-changed=OPENAL_SOFT_REF");
@@ -20,7 +33,7 @@ pub fn ensure_openal_soft_binary() -> Result<()> {
     let output_path = target_dir.join(output_name);
 
     if output_path.exists() && std::env::var("OPENAL_SOFT_FORCE_REBUILD").is_err() {
-        return Ok(());
+        return Ok(output_path);
     }
 
     let cache_root = target_dir
@@ -49,7 +62,7 @@ pub fn ensure_openal_soft_binary() -> Result<()> {
         )
     })?;
 
-    Ok(())
+    Ok(output_path)
 }
 
 fn derive_target_dir(out_dir: &Path) -> Result<PathBuf> {
@@ -73,7 +86,7 @@ fn output_name_for_target(target_os: &str) -> Result<&'static str> {
         "windows" => Ok("OpenAL32.dll"),
         "linux" => Ok("libopenal.so.1"),
         "macos" => Ok("libopenal.dylib"),
-        other => bail!("Unsupported target OS: {}", other),
+        other => bail!("Unsupported target OS: {other}"),
     }
 }
 
@@ -91,38 +104,44 @@ fn resolve_source_dir(cache_root: &Path) -> Result<PathBuf> {
 
     let reference = std::env::var("OPENAL_SOFT_REF").unwrap_or_else(|_| DEFAULT_OPENAL_REF.into());
     let source_root = cache_root.join("src");
-    let expected = source_root.join(format!("openal-soft-{}", reference));
+    let expected = source_root.join(format!("openal-soft-{reference}"));
 
     if expected.exists() {
         return Ok(expected);
     }
 
-    fs::create_dir_all(&source_root).context("Failed to create OpenAL source directory")?;
+    #[cfg(not(feature = "download"))]
+    bail!(
+        "OPENAL_SOFT_SOURCE_DIR is not set and the `download` feature is disabled (cannot fetch sources)"
+    );
 
-    let url = std::env::var("OPENAL_SOFT_URL").unwrap_or_else(|_| {
-        format!(
-            "https://github.com/kcat/openal-soft/archive/refs/tags/{}.zip",
-            reference
-        )
-    });
-    let archive_path = source_root.join(format!("openal-soft-{}.zip", reference));
+    #[cfg(feature = "download")]
+    {
+        fs::create_dir_all(&source_root).context("Failed to create OpenAL source directory")?;
 
-    if !archive_path.exists() {
-        download_zip(&url, &archive_path)?;
+        let url = std::env::var("OPENAL_SOFT_URL").unwrap_or_else(|_| {
+            format!("https://github.com/kcat/openal-soft/archive/refs/tags/{reference}.zip")
+        });
+        let archive_path = source_root.join(format!("openal-soft-{reference}.zip"));
+
+        if !archive_path.exists() {
+            download_zip(&url, &archive_path)?;
+        }
+
+        extract_zip(&archive_path, &source_root)?;
+
+        if expected.exists() {
+            return Ok(expected);
+        }
+
+        find_first_openal_dir(&source_root).context("Unable to locate extracted OpenAL source")
     }
-
-    extract_zip(&archive_path, &source_root)?;
-
-    if expected.exists() {
-        return Ok(expected);
-    }
-
-    find_first_openal_dir(&source_root).context("Unable to locate extracted OpenAL source")
 }
 
+#[cfg(feature = "download")]
 fn download_zip(url: &str, dest: &Path) -> Result<()> {
     let response =
-        reqwest::blocking::get(url).with_context(|| format!("Download failed: {}", url))?;
+        reqwest::blocking::get(url).with_context(|| format!("Download failed: {url}"))?;
     let mut response = response.error_for_status()?;
     let mut file =
         File::create(dest).with_context(|| format!("Failed to create {}", dest.display()))?;
@@ -130,6 +149,7 @@ fn download_zip(url: &str, dest: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "download")]
 fn extract_zip(archive_path: &Path, dest: &Path) -> Result<()> {
     let file = File::open(archive_path)
         .with_context(|| format!("Failed to open {}", archive_path.display()))?;
@@ -155,6 +175,7 @@ fn extract_zip(archive_path: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "download")]
 fn find_first_openal_dir(root: &Path) -> Option<PathBuf> {
     let entries = fs::read_dir(root).ok()?;
     for entry in entries.flatten() {
@@ -193,7 +214,7 @@ fn configure_openal(source_dir: &Path, build_dir: &Path, profile: &str) -> Resul
         .arg("-DALSOFT_UTILS=OFF")
         .arg("-DALSOFT_TESTS=OFF")
         .arg("-DALSOFT_STATIC=OFF")
-        .arg(format!("-DCMAKE_BUILD_TYPE={}", profile))
+        .arg(format!("-DCMAKE_BUILD_TYPE={profile}"))
         .status()
         .context("Failed to run cmake")?;
 
@@ -229,7 +250,7 @@ fn locate_built_library(build_dir: &Path, target_os: &str) -> Result<PathBuf> {
             }
             find_prefix_file(build_dir, "libopenal.so")
         }
-        other => bail!("Unsupported target OS: {}", other),
+        other => bail!("Unsupported target OS: {other}"),
     }
 }
 
@@ -242,7 +263,7 @@ fn find_named_file(root: &Path, file_name: &str) -> Result<PathBuf> {
     }) {
         return Ok(path);
     }
-    bail!("Failed to locate {} in {}", file_name, root.display());
+    bail!("Failed to locate {file_name} in {}", root.display());
 }
 
 fn find_prefix_file(root: &Path, prefix: &str) -> Result<PathBuf> {
@@ -254,7 +275,7 @@ fn find_prefix_file(root: &Path, prefix: &str) -> Result<PathBuf> {
     }) {
         return Ok(path);
     }
-    bail!("Failed to locate {}* in {}", prefix, root.display());
+    bail!("Failed to locate {prefix}* in {}", root.display());
 }
 
 fn find_file_recursive<F>(root: &Path, predicate: F) -> Option<PathBuf>

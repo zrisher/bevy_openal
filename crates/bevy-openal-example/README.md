@@ -19,6 +19,7 @@ You should see a prompt and a preloaded `beep` sample. Type `help` to list comma
 
 The build script compiles [OpenAL Soft](https://github.com/kcat/openal-soft) from source and copies the platform library next to the
 example executable. It requires CMake and a working C/C++ toolchain for your platform.
+The build logic lives in the `openal-soft-build` crate.
 
 Environment variables:
 

@@ -5,9 +5,6 @@ mod decode;
 mod openal;
 mod runtime;
 
-#[cfg(feature = "build-support")]
-pub mod build_support;
-
 #[cfg(feature = "bevy-assets")]
 pub use bevy_assets::{BevyOpenalAssetsPlugin, OpenalAudioBytes, OpenalAudioBytesLoader};
 pub use bevy_plugin::{
