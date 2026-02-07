@@ -498,7 +498,13 @@ impl OpenalEngine {
                     (self.api.al_source_i)(source, AL_LOOPING, AL_TRUE as ALint);
                     (self.api.al_source_f)(source, AL_GAIN, params.gain);
                     (self.api.al_source_f)(source, AL_PITCH, params.pitch);
-                    (self.api.al_source_3f)(source, AL_POSITION, position.x, position.y, position.z);
+                    (self.api.al_source_3f)(
+                        source,
+                        AL_POSITION,
+                        position.x,
+                        position.y,
+                        position.z,
+                    );
                     (self.api.al_source_play)(source);
                 }
                 self.api.check_al("alSourcePlay(loop)")?;
@@ -683,9 +689,20 @@ fn query_hrtf_active(api: &OpenalApi, device: *mut ALCdevice) -> bool {
         return false;
     }
 
+    let enabled_key = api.alc_enum_value(device, cstr("ALC_HRTF_SOFT\0"));
+    if enabled_key != 0 {
+        let mut value: ALCint = 0;
+        unsafe { (api.alc_get_integerv)(device, enabled_key, 1, &mut value) };
+        if api
+            .check_alc(device, "alcGetIntegerv(ALC_HRTF_SOFT)")
+            .is_ok()
+        {
+            return value != 0;
+        }
+    }
+
     let status_key = api.alc_enum_value(device, cstr("ALC_HRTF_STATUS_SOFT\0"));
-    let enabled_value = api.alc_enum_value(device, cstr("ALC_HRTF_ENABLED_SOFT\0"));
-    if status_key == 0 || enabled_value == 0 {
+    if status_key == 0 {
         return false;
     }
 
@@ -698,7 +715,12 @@ fn query_hrtf_active(api: &OpenalApi, device: *mut ALCdevice) -> bool {
         return false;
     }
 
-    value == enabled_value as ALCint
+    let enabled = api.alc_enum_value(device, cstr("ALC_HRTF_ENABLED_SOFT\0")) as ALCint;
+    let required = api.alc_enum_value(device, cstr("ALC_HRTF_REQUIRED_SOFT\0")) as ALCint;
+    let detected =
+        api.alc_enum_value(device, cstr("ALC_HRTF_HEADPHONES_DETECTED_SOFT\0")) as ALCint;
+
+    value != 0 && (value == enabled || value == required || value == detected)
 }
 
 fn query_output_mode(

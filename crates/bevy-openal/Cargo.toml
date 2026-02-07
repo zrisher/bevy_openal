@@ -5,8 +5,10 @@ edition.workspace = true
 
 [dependencies]
 bevy_app.workspace = true
+bevy_asset = { workspace = true, optional = true }
 bevy_ecs.workspace = true
 bevy_math.workspace = true
+bevy_reflect = { workspace = true, optional = true }
 bevy_transform.workspace = true
 glam.workspace = true
 libloading = "0.8.9"
@@ -19,3 +21,4 @@ zip = { workspace = true, optional = true }
 
 [features]
 build-support = ["dep:anyhow", "dep:reqwest", "dep:zip"]
+bevy-assets = ["dep:bevy_asset", "dep:bevy_reflect"]

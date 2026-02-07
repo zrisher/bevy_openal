@@ -9,8 +9,10 @@ edition = "2021"
 [workspace.dependencies]
 anyhow = "1.0.95"
 bevy_app = { version = "0.18", default-features = false, features = ["std"] }
+bevy_asset = { version = "0.18", default-features = false }
 bevy_ecs = { version = "0.18", default-features = false, features = ["std"] }
 bevy_math = { version = "0.18", default-features = false, features = ["std"] }
+bevy_reflect = { version = "0.18", default-features = false, features = ["std"] }
 bevy_time = { version = "0.18", default-features = false, features = ["std"] }
 bevy_transform = { version = "0.18", default-features = false, features = ["std", "bevy-support"] }
 glam = "0.30.7"

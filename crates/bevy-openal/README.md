@@ -14,7 +14,9 @@ thin and explicit.
   - register mono PCM buffers
   - play simple one-shots
 - Status snapshot for HUD/logs (`AudioRuntimeStatus`).
+- Bevy `Resource` status mirror (`OpenalStatus`) for UI/console without grabbing the runtime lock.
 - Decode helper (`decode_to_mono_i16`) that downmixes to mono 16-bit PCM.
+- Optional Bevy raw-bytes asset loader (`bevy-assets` feature) for common audio extensions.
 
 ## Not In This Crate (By Design)
 
@@ -22,7 +24,7 @@ thin and explicit.
 - Voice management, concurrency, buses, snapshots, ducking, or mastering.
 - Streaming, music playback, or long-form ambience.
 - Occlusion, reverb, propagation, or geometry-based effects.
-- Bevy asset loaders, console commands, or debug HUD.
+- Console commands or debug HUD.
 
 These live in the client and sit on top of this runtime.
 
