@@ -1,5 +1,7 @@
 use glam::Vec3;
+use std::any::Any;
 use std::collections::HashMap;
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -200,7 +202,19 @@ impl AudioRuntime {
         let thread_status = Arc::clone(&status);
         let thread = thread::Builder::new()
             .name("zrg-audio".to_string())
-            .spawn(move || audio_thread_main(config, rx, thread_status))
+            .spawn(move || {
+                let status_for_panic = Arc::clone(&thread_status);
+                let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                    audio_thread_main(config, rx, thread_status);
+                }));
+                if let Err(panic) = result {
+                    let message = panic_message(panic);
+                    if let Ok(mut st) = status_for_panic.lock() {
+                        st.last_error = Some(format!("audio runtime panic: {message}"));
+                    }
+                    error!(panic = %message, "Audio runtime thread panicked");
+                }
+            })
             .map_err(|_| RuntimeError::NotAvailable)?;
 
         Ok(Self {
@@ -307,13 +321,15 @@ fn audio_thread_main(
 
     let preferred_device = config.preferred_device.as_deref();
 
-    let mut engine = match OpenalEngine::new(
-        render_mode,
-        preferred_device,
-        config.max_sources,
-        distance_model,
-    ) {
-        Ok(engine) => {
+    let mut engine = match panic::catch_unwind(AssertUnwindSafe(|| {
+        OpenalEngine::new(
+            render_mode,
+            preferred_device,
+            config.max_sources,
+            distance_model,
+        )
+    })) {
+        Ok(Ok(engine)) => {
             let mut engine = engine;
             rebuild_buffers(
                 &mut engine,
@@ -335,9 +351,15 @@ fn audio_thread_main(
             info!(render_mode = %render_mode.as_str(), "Audio runtime started");
             Some(engine)
         }
-        Err(err) => {
+        Ok(Err(err)) => {
             update_status_error(&status, render_mode, distance_model, muted, &err);
             error!(error = %err, "Audio runtime failed to initialize");
+            None
+        }
+        Err(panic) => {
+            let message = panic_message(panic);
+            update_status_panic(&status, render_mode, distance_model, muted, &message);
+            error!(panic = %message, "Audio runtime panicked during initialization");
             None
         }
     };
@@ -367,10 +389,14 @@ fn audio_thread_main(
             }
             Ok(AudioCommand::SetRenderMode(mode)) => {
                 render_mode = mode;
+                let mut drop_engine = false;
                 match engine.as_mut() {
                     Some(engine) => {
-                        match engine.recreate(render_mode, preferred_device, distance_model) {
-                            Ok(()) => {
+                        let recreated = panic::catch_unwind(AssertUnwindSafe(|| {
+                            engine.recreate(render_mode, preferred_device, distance_model)
+                        }));
+                        match recreated {
+                            Ok(Ok(())) => {
                                 rebuild_buffers(
                                     engine,
                                     &buffers,
@@ -392,7 +418,7 @@ fn audio_thread_main(
                                 update_status_ok(&status, render_mode, muted, engine);
                                 info!(render_mode = %render_mode.as_str(), "Audio render mode changed");
                             }
-                            Err(err) => {
+                            Ok(Err(err)) => {
                                 update_status_error(
                                     &status,
                                     render_mode,
@@ -401,16 +427,32 @@ fn audio_thread_main(
                                     &err,
                                 );
                             }
+                            Err(panic) => {
+                                let message = panic_message(panic);
+                                update_status_panic(
+                                    &status,
+                                    render_mode,
+                                    distance_model,
+                                    muted,
+                                    &message,
+                                );
+                                error!(panic = %message, "Audio runtime panicked while recreating");
+                                engine.shutdown();
+                                drop_engine = true;
+                            }
                         }
                     }
                     None => {
-                        match OpenalEngine::new(
-                            render_mode,
-                            preferred_device,
-                            config.max_sources,
-                            distance_model,
-                        ) {
-                            Ok(new_engine) => {
+                        let recreated = panic::catch_unwind(AssertUnwindSafe(|| {
+                            OpenalEngine::new(
+                                render_mode,
+                                preferred_device,
+                                config.max_sources,
+                                distance_model,
+                            )
+                        }));
+                        match recreated {
+                            Ok(Ok(new_engine)) => {
                                 let mut new_engine = new_engine;
                                 rebuild_buffers(
                                     &mut new_engine,
@@ -434,7 +476,7 @@ fn audio_thread_main(
                                 info!(render_mode = %render_mode.as_str(), "Audio runtime started");
                                 engine = Some(new_engine);
                             }
-                            Err(err) => {
+                            Ok(Err(err)) => {
                                 update_status_error(
                                     &status,
                                     render_mode,
@@ -443,8 +485,22 @@ fn audio_thread_main(
                                     &err,
                                 );
                             }
+                            Err(panic) => {
+                                let message = panic_message(panic);
+                                update_status_panic(
+                                    &status,
+                                    render_mode,
+                                    distance_model,
+                                    muted,
+                                    &message,
+                                );
+                                error!(panic = %message, "Audio runtime panicked during restart");
+                            }
                         }
                     }
+                }
+                if drop_engine {
+                    engine = None;
                 }
             }
             Ok(AudioCommand::SetDistanceModel(model)) => {
@@ -596,6 +652,32 @@ fn update_status_error(
     st.distance_model = distance_model;
     st.muted = muted;
     st.last_error = Some(err.to_string());
+}
+
+fn update_status_panic(
+    status: &Arc<Mutex<AudioRuntimeStatus>>,
+    render_mode: AudioRenderMode,
+    distance_model: DistanceModel,
+    muted: bool,
+    message: &str,
+) {
+    let Ok(mut st) = status.lock() else {
+        return;
+    };
+    st.render_mode = render_mode;
+    st.distance_model = distance_model;
+    st.muted = muted;
+    st.last_error = Some(format!("panic: {message}"));
+}
+
+fn panic_message(panic: Box<dyn Any + Send>) -> String {
+    if let Some(message) = panic.downcast_ref::<&str>() {
+        return (*message).to_string();
+    }
+    if let Some(message) = panic.downcast_ref::<String>() {
+        return message.clone();
+    }
+    "unknown panic".to_string()
 }
 
 #[cfg(test)]

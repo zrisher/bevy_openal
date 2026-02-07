@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const DEFAULT_OPENAL_REF: &str = "1.23.1";
+const BUILD_INFO_FILE: &str = "openal-soft.build-info";
 
 /// Ensures the OpenAL Soft shared library is present in the current target directory.
 ///
@@ -31,9 +32,26 @@ pub fn ensure_openal_soft_binary() -> Result<PathBuf> {
         .to_lowercase();
     let output_name = output_name_for_target(&target_os)?;
     let output_path = target_dir.join(output_name);
+    let build_info_path = target_dir.join(BUILD_INFO_FILE);
+    let build_profile = cmake_profile();
+    let expected_info = BuildInfo::new(build_profile.clone())?;
 
-    if output_path.exists() && std::env::var("OPENAL_SOFT_FORCE_REBUILD").is_err() {
-        return Ok(output_path);
+    let force_rebuild = std::env::var("OPENAL_SOFT_FORCE_REBUILD").is_ok();
+    if output_path.exists() && !force_rebuild {
+        if let Some(existing) = BuildInfo::read(&build_info_path) {
+            if existing == expected_info {
+                return Ok(output_path);
+            }
+            println!(
+                "cargo:warning=OpenAL Soft build info mismatch; rebuilding (expected {expected_info:?}, found {existing:?})"
+            );
+        } else {
+            println!(
+                "cargo:warning=OpenAL Soft build info missing; rebuilding to avoid stale library"
+            );
+        }
+    } else if output_path.exists() && force_rebuild {
+        println!("cargo:warning=OpenAL Soft rebuild forced by OPENAL_SOFT_FORCE_REBUILD");
     }
 
     let cache_root = target_dir
@@ -49,7 +67,6 @@ pub fn ensure_openal_soft_binary() -> Result<PathBuf> {
 
     fs::create_dir_all(&build_dir).context("Failed to create OpenAL build directory")?;
 
-    let build_profile = cmake_profile();
     configure_openal(&source_dir, &build_dir, &build_profile)?;
     build_openal(&build_dir, &build_profile)?;
 
@@ -61,6 +78,10 @@ pub fn ensure_openal_soft_binary() -> Result<PathBuf> {
             output_path.display()
         )
     })?;
+
+    if let Err(err) = expected_info.write(&build_info_path) {
+        println!("cargo:warning=Failed to write OpenAL Soft build info: {err}");
+    }
 
     Ok(output_path)
 }
@@ -201,6 +222,78 @@ fn cmake_profile() -> String {
         "release" => "Release".to_string(),
         _ => "Debug".to_string(),
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BuildInfo {
+    source: String,
+    profile: String,
+    target: String,
+}
+
+impl BuildInfo {
+    fn new(profile: String) -> Result<Self> {
+        let source = match std::env::var("OPENAL_SOFT_SOURCE_DIR") {
+            Ok(path) => format!("dir:{path}"),
+            Err(_) => {
+                let reference =
+                    std::env::var("OPENAL_SOFT_REF").unwrap_or_else(|_| DEFAULT_OPENAL_REF.into());
+                format!("ref:{reference}")
+            }
+        };
+        let target = target_triple()?;
+
+        Ok(Self {
+            source,
+            profile,
+            target,
+        })
+    }
+
+    fn read(path: &Path) -> Option<Self> {
+        let contents = fs::read_to_string(path).ok()?;
+        let mut source = None;
+        let mut profile = None;
+        let mut target = None;
+        for line in contents.lines() {
+            if let Some((key, value)) = line.split_once('=') {
+                match key.trim() {
+                    "source" => source = Some(value.trim().to_string()),
+                    "profile" => profile = Some(value.trim().to_string()),
+                    "target" => target = Some(value.trim().to_string()),
+                    _ => {}
+                }
+            }
+        }
+        Some(Self {
+            source: source?,
+            profile: profile?,
+            target: target?,
+        })
+    }
+
+    fn write(&self, path: &Path) -> Result<()> {
+        let contents = format!(
+            "source={}\nprofile={}\ntarget={}\n",
+            self.source, self.profile, self.target
+        );
+        fs::write(path, contents).with_context(|| {
+            format!(
+                "Failed to write OpenAL Soft build info to {}",
+                path.display()
+            )
+        })?;
+        Ok(())
+    }
+}
+
+fn target_triple() -> Result<String> {
+    let arch = std::env::var("CARGO_CFG_TARGET_ARCH").context("CARGO_CFG_TARGET_ARCH not set")?;
+    let vendor =
+        std::env::var("CARGO_CFG_TARGET_VENDOR").context("CARGO_CFG_TARGET_VENDOR not set")?;
+    let os = std::env::var("CARGO_CFG_TARGET_OS").context("CARGO_CFG_TARGET_OS not set")?;
+    let env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_else(|_| "unknown".into());
+    Ok(format!("{arch}-{vendor}-{os}-{env}"))
 }
 
 fn configure_openal(source_dir: &Path, build_dir: &Path, profile: &str) -> Result<()> {

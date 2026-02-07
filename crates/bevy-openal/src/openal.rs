@@ -4,8 +4,10 @@ use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 use std::ptr::{self, NonNull};
+use std::sync::Once;
+use std::{fs, path::PathBuf};
 use thiserror::Error;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     AudioRenderMode, BufferKey, DecodedAudioMono16, DistanceModel, ListenerFrame, PlayOneShotParams,
@@ -222,7 +224,7 @@ fn load_openal_library() -> Option<Library> {
     #[cfg(target_os = "macos")]
     const CANDIDATES: [&str; 2] = ["libopenal.dylib", "OpenAL.framework/OpenAL"];
 
-    let mut candidate_paths = Vec::new();
+    let mut candidate_paths: Vec<PathBuf> = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
             for candidate in CANDIDATES {
@@ -231,6 +233,9 @@ fn load_openal_library() -> Option<Library> {
         }
     }
 
+    log_openal_candidates(&candidate_paths, &CANDIDATES);
+
+    let mut failures: Vec<(String, String)> = Vec::new();
     for candidate in &candidate_paths {
         match unsafe { Library::new(candidate) } {
             Ok(lib) => {
@@ -239,6 +244,7 @@ fn load_openal_library() -> Option<Library> {
             }
             Err(err) => {
                 debug!(library = %candidate.display(), error = %err, "Failed to load OpenAL library");
+                failures.push((candidate.display().to_string(), err.to_string()));
             }
         }
     }
@@ -251,10 +257,48 @@ fn load_openal_library() -> Option<Library> {
             }
             Err(err) => {
                 debug!(library = candidate, error = %err, "Failed to load OpenAL library");
+                failures.push((candidate.to_string(), err.to_string()));
             }
         }
     }
+
+    if !failures.is_empty() {
+        warn!(failures = ?failures, "OpenAL library load failed for all candidates");
+    }
     None
+}
+
+fn log_openal_candidates(candidate_paths: &[PathBuf], system_candidates: &[&str]) {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        if let Ok(exe) = std::env::current_exe() {
+            info!(exe = %exe.display(), "OpenAL loader executable path");
+        }
+        for candidate in candidate_paths {
+            match fs::metadata(candidate) {
+                Ok(meta) => {
+                    info!(
+                        path = %candidate.display(),
+                        exists = true,
+                        size = meta.len(),
+                        "OpenAL candidate metadata"
+                    );
+                }
+                Err(err) => {
+                    info!(
+                        path = %candidate.display(),
+                        exists = false,
+                        error = %err,
+                        "OpenAL candidate metadata"
+                    );
+                }
+            }
+        }
+        info!(
+            system_candidates = ?system_candidates,
+            "OpenAL system library candidates"
+        );
+    });
 }
 
 pub struct OpenalEngine {
